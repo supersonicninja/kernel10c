@@ -20,6 +20,7 @@
 #include <linux/workqueue.h>
 #include <linux/cpumask.h>
 #include <asm/div64.h>
+#include <linux/kernel_stat.h>
 
 #define CPUFREQ_NAME_LEN 16
 
@@ -35,6 +36,7 @@
 int cpufreq_register_notifier(struct notifier_block *nb, unsigned int list);
 int cpufreq_unregister_notifier(struct notifier_block *nb, unsigned int list);
 extern void disable_cpufreq(void);
+u64 get_cpu_idle_time(unsigned int cpu, u64 *wall, int io_busy);
 #else		/* CONFIG_CPU_FREQ */
 static inline int cpufreq_register_notifier(struct notifier_block *nb,
 						unsigned int list)
@@ -264,8 +266,17 @@ void cpufreq_notify_transition(struct cpufreq_freqs *freqs, unsigned int state);
 void cpufreq_notify_utilization(struct cpufreq_policy *policy,
 		unsigned int load);
 
+#ifdef CONFIG_MSM_CPUFREQ_LIMITER
+extern unsigned int limited_max_freq;
+#endif
+
 static inline void cpufreq_verify_within_limits(struct cpufreq_policy *policy, unsigned int min, unsigned int max)
 {
+
+#ifdef CONFIG_MSM_CPUFREQ_LIMITER
+	max = min(limited_max_freq, max);
+#endif
+
 	if (policy->min < min)
 		policy->min = min;
 	if (policy->max < min)
@@ -345,6 +356,37 @@ static inline unsigned int cpufreq_quick_get_max(unsigned int cpu)
 }
 #endif
 
+#ifdef CONFIG_CPU_MAX_LIMIT
+enum {
+	BOOT_CPU = 0,
+};
+
+int get_max_freq(void);
+int get_min_freq(void);
+
+#define MAX_FREQ_LIMIT		get_max_freq() /* 2803200 */
+#define MIN_FREQ_LIMIT		get_min_freq() /* 300000 */
+
+#define UPDATE_NOW_BITS		0xFF
+
+enum {
+	CPU_LIMIT_NO_ID			= 0,
+
+	/* need to update now */
+	CPU_LIMIT_MIN_ID		= 0x00000001,
+	CPU_LIMIT_MAX_ID		= 0x00000002,
+
+	CPU_MAX_ID
+};
+
+int set_freq_limit(unsigned long id, unsigned int freq);
+
+unsigned int get_min_lock(void);
+unsigned int get_max_lock(void);
+void set_min_lock(int freq);
+void set_max_lock(int freq);
+
+#endif
 
 /*********************************************************************
  *                       CPUFREQ DEFAULT GOVERNOR                    *
@@ -387,6 +429,12 @@ extern struct cpufreq_governor cpufreq_gov_ondemandplus;
 #elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_NIGHTMARE)
 extern struct cpufreq_governor cpufreq_gov_nightmare;
 #define CPUFREQ_DEFAULT_GOVERNOR	(&cpufreq_gov_nightmare)
+#elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_DARKNESS)
+extern struct cpufreq_governor cpufreq_gov_darkness;
+#define CPUFREQ_DEFAULT_GOVERNOR	(&cpufreq_gov_darkness)
+#elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_ALUCARD)
+extern struct cpufreq_governor cpufreq_gov_alucard;
+#define CPUFREQ_DEFAULT_GOVERNOR	(&cpufreq_gov_alucard)
 #elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_HYPER)
 extern struct cpufreq_governor cpufreq_gov_HYPER;
 #define CPUFREQ_DEFAULT_GOVERNOR	(&cpufreq_gov_HYPER)
