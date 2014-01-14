@@ -41,10 +41,8 @@ static DECLARE_WORK(power_suspend_work, power_suspend);
 static DECLARE_WORK(power_resume_work, power_resume);
 static DEFINE_SPINLOCK(state_lock);
 
-/* Yank555.lu : Current powersave state (screen on / off) */
-static int state;
-/* Yank555.lu : Current powersave more  (kernel / userspace) */
-static int mode = POWER_SUSPEND_KERNEL;
+static int state; // Yank555.lu : Current powersave state (screen on / off)
+static int mode;  // Yank555.lu : Current powersave more  (kernel / userspace)
 
 void register_power_suspend(struct power_suspend *handler)
 {
@@ -159,9 +157,8 @@ void set_power_suspend_state(int new_state)
 
 void set_power_suspend_state_hook(int new_state)
 {
-	/* Yank555.lu : Only allow kernel hook changes in kernel mode */
         if (mode == POWER_SUSPEND_KERNEL)
-                set_power_suspend_state(new_state);
+                set_power_suspend_state(new_state);  // Yank555.lu : Only allow kernel hook changes in kernel mode
 }
 
 EXPORT_SYMBOL(set_power_suspend_state_hook);
@@ -179,13 +176,12 @@ static ssize_t power_suspend_state_store(struct kobject *kobj,
 {
         int data = 0;
 
-	/* Yank555.lu : Only allow sysfs changes in userspace mode */
-        if (mode != POWER_SUSPEND_USERSPACE)
+        if (mode != POWER_SUSPEND_USERSPACE) // Yank555.lu : Only allow sysfs changes in userspace mode
                 return -EINVAL;
 
         sscanf(buf, "%d\n", &data);
 
-        if (data == 1 || data == 0) {
+        if(data == 1 || data == 0) {
                 set_power_suspend_state(data);
                 pr_info("power suspend state requested => %d\n", data);
         }
@@ -206,25 +202,24 @@ static ssize_t power_suspend_mode_show(struct kobject *kobj,
 static ssize_t power_suspend_mode_store(struct kobject *kobj,
                 struct kobj_attribute *attr, const char *buf, size_t count)
 {
-	int data = 0;
+        int data = 0;
 
-	sscanf(buf, "%d\n", &data);
+        sscanf(buf, "%d\n", &data);
 
-	switch (data) {
-		case POWER_SUSPEND_KERNEL:
-                case POWER_SUSPEND_USERSPACE:
-			mode = data;
-			return count;
-		default:
-			return -EINVAL;
-	}
-        
+        switch (data) {
+                case POWER_SUSPEND_KERNEL:
+                case POWER_SUSPEND_USERSPACE:        mode = data;
+                                                return count;
+                default:
+                        return -EINVAL;
+        }
+
 }
 
 static struct kobj_attribute power_suspend_mode_attribute =
-		__ATTR(power_suspend_mode, 0666,
-		power_suspend_mode_show,
-		power_suspend_mode_store);
+        __ATTR(power_suspend_mode, 0666,
+                power_suspend_mode_show,
+                power_suspend_mode_store);
 
 static ssize_t power_suspend_version_show(struct kobject *kobj,
                 struct kobj_attribute *attr, char *buf)
@@ -233,9 +228,9 @@ static ssize_t power_suspend_version_show(struct kobject *kobj,
 }
 
 static struct kobj_attribute power_suspend_version_attribute =
-		__ATTR(power_suspend_version, 0444,
-		power_suspend_version_show,
-		NULL);
+        __ATTR(power_suspend_version, 0444,
+                power_suspend_version_show,
+                NULL);
 
 static struct attribute *power_suspend_attrs[] =
 {
@@ -280,7 +275,7 @@ static int __init power_suspend_init(void)
                 return -ENOMEM;
         }
 
-        mode = POWER_SUSPEND_KERNEL;
+        mode = POWER_SUSPEND_USERSPACE;
 
         return 0;
 }
@@ -291,7 +286,7 @@ static void __exit power_suspend_exit(void)
                 kobject_put(power_suspend_kobj);
 
         destroy_workqueue(suspend_work_queue);
-}
+} 
 
 core_initcall(power_suspend_init);
 module_exit(power_suspend_exit);
