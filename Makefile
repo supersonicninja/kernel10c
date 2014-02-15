@@ -374,7 +374,7 @@ LINUXINCLUDE    := -I$(srctree)/arch/$(hdr-arch)/include \
 KBUILD_CPPFLAGS := -D__KERNEL__
 
 KBUILD_CFLAGS   := -Wall -Wno-maybe-uninitialized -Wno-sizeof-pointer-memaccess\
-		   -Wno-array-bounds -Wno-unused-variable -Wno-implicit-function-declaration\
+		   -Wno-array-bounds -Wno-unused-variable \
  		   -fno-strict-aliasing -fno-common \
  		   -fno-delete-null-pointer-checks \
 		   -march=armv7-a -marm -mfpu=neon-vfpv4
