@@ -534,7 +534,7 @@ static void __init build_mem_type_table(void)
 #endif
 
 	for (i = 0; i < 16; i++) {
-		unsigned long v = pgprot_val(protection_map[i]);
+		pteval_t v = pgprot_val(protection_map[i]);
 		protection_map[i] = __pgprot(v | user_pgprot);
 	}
 
@@ -846,6 +846,8 @@ void __init iotable_init(struct map_desc *io_desc, int nr)
 		vm_area_add_early(vm++);
 	}
 }
+
+
 
 #ifndef CONFIG_ARM_LPAE
 

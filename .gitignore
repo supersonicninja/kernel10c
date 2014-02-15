@@ -84,6 +84,7 @@ GRTAGS
 GSYMS
 GTAGS
 
+*.rej
 *.orig
 *~
 \#*#

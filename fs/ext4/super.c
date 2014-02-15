@@ -54,9 +54,6 @@
 #define CREATE_TRACE_POINTS
 #include <trace/events/ext4.h>
 
-#ifdef CONFIG_EXT4_LGE_JOURNAL_RECOVERY
-#include <mach/board_lge.h>
-#endif
 static struct proc_dir_entry *ext4_proc_root;
 static struct kset *ext4_kset;
 static struct ext4_lazy_init *ext4_li_info;
@@ -661,14 +658,6 @@ void __ext4_abort(struct super_block *sb, const char *function,
 		if (EXT4_SB(sb)->s_journal)
 			jbd2_journal_abort(EXT4_SB(sb)->s_journal, -EIO);
 		save_error_info(sb, function, line);
-	#ifdef CONFIG_MACH_LGE
-	/*
-	2013-07-06, G2-FS@lge.com
-	put panic when FS is re-mounted as Read Only
-	*/
-	panic("EXT4-fs panic from previous error. remounted as RO \n");
-	#endif
-
 	}
 	if (test_opt(sb, ERRORS_PANIC))
 		panic("EXT4-fs panic from previous error\n");
@@ -946,6 +935,7 @@ static struct inode *ext4_alloc_inode(struct super_block *sb)
 	ei->i_reserved_meta_blocks = 0;
 	ei->i_allocated_meta_blocks = 0;
 	ei->i_da_metadata_calc_len = 0;
+	ei->i_da_metadata_calc_last_lblock = 0;
 	spin_lock_init(&(ei->i_block_reservation_lock));
 #ifdef CONFIG_QUOTA
 	ei->i_reserved_quota = 0;
@@ -1612,9 +1602,7 @@ static int parse_options(char *options, struct super_block *sb,
 			 unsigned int *journal_ioprio,
 			 int is_remount)
 {
-#ifdef CONFIG_QUOTA
 	struct ext4_sb_info *sbi = EXT4_SB(sb);
-#endif
 	char *p;
 	substring_t args[MAX_OPT_ARGS];
 	int token;
@@ -1663,6 +1651,16 @@ static int parse_options(char *options, struct super_block *sb,
 		}
 	}
 #endif
+	if (test_opt(sb, DIOREAD_NOLOCK)) {
+		int blocksize =
+			BLOCK_SIZE << le32_to_cpu(sbi->s_es->s_log_block_size);
+
+		if (blocksize < PAGE_CACHE_SIZE) {
+			ext4_msg(sb, KERN_ERR, "can't mount with "
+				 "dioread_nolock if block size != PAGE_SIZE");
+			return 0;
+		}
+	}
 	return 1;
 }
 
@@ -1705,7 +1703,7 @@ static inline void ext4_show_quota_options(struct seq_file *seq,
 
 static const char *token2str(int token)
 {
-	static const struct match_token *t;
+	const struct match_token *t;
 
 	for (t = tokens; t->token != Opt_err; t++)
 		if (t->token == token && !strchr(t->pattern, '='))
@@ -1829,27 +1827,17 @@ static int ext4_setup_super(struct super_block *sb, struct ext4_super_block *es,
 	if (le32_to_cpu(es->s_rev_level) > EXT4_MAX_SUPP_REV) {
 		ext4_msg(sb, KERN_ERR, "revision level too high, "
 			 "forcing read-only mode");
-		/*LGE_CHANGE G2-FS@lge.com */
 		res = MS_RDONLY;
-		/*LGE_CHANGE G2-FS@lge.com */
 	}
 	if (read_only)
 		goto done;
 	if (!(sbi->s_mount_state & EXT4_VALID_FS))
 		ext4_msg(sb, KERN_WARNING, "warning: mounting unchecked fs, "
 			 "running e2fsck is recommended");
-	else if ((sbi->s_mount_state & EXT4_ERROR_FS)){
+	else if ((sbi->s_mount_state & EXT4_ERROR_FS))
 		ext4_msg(sb, KERN_WARNING,
 			 "warning: mounting fs with errors, "
 			 "running e2fsck is recommended");
-	#ifdef CONFIG_EXT4_LGE_JOURNAL_RECOVERY
-	/*
-	 * 2013-07-25, G2-FS@lge.com
-	 * in this case, we need to run e2fsck with j & fy option, let's return EJOURNAL
-	*/
-		res = EJOURNAL;
-	#endif
-	}
 	else if ((__s16) le16_to_cpu(es->s_max_mnt_count) > 0 &&
 		 le16_to_cpu(es->s_mnt_count) >=
 		 (unsigned short) (__s16) le16_to_cpu(es->s_max_mnt_count))
@@ -1922,8 +1910,8 @@ static int ext4_fill_flex_info(struct super_block *sb)
 		flex_group = ext4_flex_group(sbi, i);
 		atomic_add(ext4_free_inodes_count(sb, gdp),
 			   &sbi->s_flex_groups[flex_group].free_inodes);
-		atomic_add(ext4_free_group_clusters(sb, gdp),
-			   &sbi->s_flex_groups[flex_group].free_clusters);
+		atomic64_add(ext4_free_group_clusters(sb, gdp),
+			     &sbi->s_flex_groups[flex_group].free_clusters);
 		atomic_add(ext4_used_dirs_count(sb, gdp),
 			   &sbi->s_flex_groups[flex_group].used_dirs);
 	}
@@ -2135,7 +2123,9 @@ static void ext4_orphan_cleanup(struct super_block *sb,
 				__func__, inode->i_ino, inode->i_size);
 			jbd_debug(2, "truncating inode %lu to %lld bytes\n",
 				  inode->i_ino, inode->i_size);
+			mutex_lock(&inode->i_mutex);
 			ext4_truncate(inode);
+			mutex_unlock(&inode->i_mutex);
 			nr_truncates++;
 		} else {
 			ext4_msg(sb, KERN_DEBUG,
@@ -2968,6 +2958,118 @@ static void ext4_destroy_lazyinit_thread(void)
 	kthread_stop(ext4_lazyinit_task);
 }
 
+/*
+ * Note: calculating the overhead so we can be compatible with
+ * historical BSD practice is quite difficult in the face of
+ * clusters/bigalloc.  This is because multiple metadata blocks from
+ * different block group can end up in the same allocation cluster.
+ * Calculating the exact overhead in the face of clustered allocation
+ * requires either O(all block bitmaps) in memory or O(number of block
+ * groups**2) in time.  We will still calculate the superblock for
+ * older file systems --- and if we come across with a bigalloc file
+ * system with zero in s_overhead_clusters the estimate will be close to
+ * correct especially for very large cluster sizes --- but for newer
+ * file systems, it's better to calculate this figure once at mkfs
+ * time, and store it in the superblock.  If the superblock value is
+ * present (even for non-bigalloc file systems), we will use it.
+ */
+static int count_overhead(struct super_block *sb, ext4_group_t grp,
+			  char *buf)
+{
+	struct ext4_sb_info	*sbi = EXT4_SB(sb);
+	struct ext4_group_desc	*gdp;
+	ext4_fsblk_t		first_block, last_block, b;
+	ext4_group_t		i, ngroups = ext4_get_groups_count(sb);
+	int			s, j, count = 0;
+
+	if (!EXT4_HAS_RO_COMPAT_FEATURE(sb, EXT4_FEATURE_RO_COMPAT_BIGALLOC))
+		return (ext4_bg_has_super(sb, grp) + ext4_bg_num_gdb(sb, grp) +
+			sbi->s_itb_per_group + 2);
+
+	first_block = le32_to_cpu(sbi->s_es->s_first_data_block) +
+		(grp * EXT4_BLOCKS_PER_GROUP(sb));
+	last_block = first_block + EXT4_BLOCKS_PER_GROUP(sb) - 1;
+	for (i = 0; i < ngroups; i++) {
+		gdp = ext4_get_group_desc(sb, i, NULL);
+		b = ext4_block_bitmap(sb, gdp);
+		if (b >= first_block && b <= last_block) {
+			ext4_set_bit(EXT4_B2C(sbi, b - first_block), buf);
+			count++;
+		}
+		b = ext4_inode_bitmap(sb, gdp);
+		if (b >= first_block && b <= last_block) {
+			ext4_set_bit(EXT4_B2C(sbi, b - first_block), buf);
+			count++;
+		}
+		b = ext4_inode_table(sb, gdp);
+		if (b >= first_block && b + sbi->s_itb_per_group <= last_block)
+			for (j = 0; j < sbi->s_itb_per_group; j++, b++) {
+				int c = EXT4_B2C(sbi, b - first_block);
+				ext4_set_bit(c, buf);
+				count++;
+			}
+		if (i != grp)
+			continue;
+		s = 0;
+		if (ext4_bg_has_super(sb, grp)) {
+			ext4_set_bit(s++, buf);
+			count++;
+		}
+		for (j = ext4_bg_num_gdb(sb, grp); j > 0; j--) {
+			ext4_set_bit(EXT4_B2C(sbi, s++), buf);
+			count++;
+		}
+	}
+	if (!count)
+		return 0;
+	return EXT4_CLUSTERS_PER_GROUP(sb) -
+		ext4_count_free(buf, EXT4_CLUSTERS_PER_GROUP(sb) / 8);
+}
+
+/*
+ * Compute the overhead and stash it in sbi->s_overhead
+ */
+int ext4_calculate_overhead(struct super_block *sb)
+{
+	struct ext4_sb_info *sbi = EXT4_SB(sb);
+	struct ext4_super_block *es = sbi->s_es;
+	ext4_group_t i, ngroups = ext4_get_groups_count(sb);
+	ext4_fsblk_t overhead = 0;
+	char *buf = (char *) get_zeroed_page(GFP_KERNEL);
+
+	memset(buf, 0, PAGE_SIZE);
+	if (!buf)
+		return -ENOMEM;
+
+	/*
+	 * Compute the overhead (FS structures).  This is constant
+	 * for a given filesystem unless the number of block groups
+	 * changes so we cache the previous value until it does.
+	 */
+
+	/*
+	 * All of the blocks before first_data_block are overhead
+	 */
+	overhead = EXT4_B2C(sbi, le32_to_cpu(es->s_first_data_block));
+
+	/*
+	 * Add the overhead found in each block group
+	 */
+	for (i = 0; i < ngroups; i++) {
+		int blks;
+
+		blks = count_overhead(sb, i, buf);
+		overhead += blks;
+		if (blks)
+			memset(buf, 0, PAGE_SIZE);
+		cond_resched();
+	}
+	sbi->s_overhead = overhead;
+	smp_wmb();
+	free_page((unsigned long) buf);
+	return 0;
+}
+
 static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 {
 	char *orig_data = kstrdup(data, GFP_KERNEL);
@@ -2991,9 +3093,6 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 	__u64 blocks_count;
 	int err;
 	unsigned int journal_ioprio = DEFAULT_JOURNAL_IOPRIO;
-#ifdef CONFIG_EXT4_LGE_JOURNAL_RECOVERY
-	int mountOK=0;
-#endif
 	ext4_group_t first_not_zeroed;
 
 	sbi = kzalloc(sizeof(*sbi), GFP_KERNEL);
@@ -3133,20 +3232,11 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 		}
 		if (test_opt(sb, DIOREAD_NOLOCK)) {
 			ext4_msg(sb, KERN_ERR, "can't mount with "
-				 "both data=journal and delalloc");
+				 "both data=journal and dioread_nolock");
 			goto failed_mount;
 		}
 		if (test_opt(sb, DELALLOC))
 			clear_opt(sb, DELALLOC);
-	}
-
-	blocksize = BLOCK_SIZE << le32_to_cpu(es->s_log_block_size);
-	if (test_opt(sb, DIOREAD_NOLOCK)) {
-		if (blocksize < PAGE_SIZE) {
-			ext4_msg(sb, KERN_ERR, "can't mount with "
-				 "dioread_nolock if block size != PAGE_SIZE");
-			goto failed_mount;
-		}
 	}
 
 	sb->s_flags = (sb->s_flags & ~MS_POSIXACL) |
@@ -3159,9 +3249,6 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 		ext4_msg(sb, KERN_WARNING,
 		       "feature flags set on rev 0 fs, "
 		       "running e2fsck is recommended");
-
-	if (test_opt(sb, ERRORS_PANIC))
-		printk("<choi> mount option is panic\n");
 
 	if (IS_EXT2_SB(sb)) {
 		if (ext2_feature_set_ok(sb))
@@ -3193,6 +3280,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 	if (!ext4_feature_set_ok(sb, (sb->s_flags & MS_RDONLY)))
 		goto failed_mount;
 
+	blocksize = BLOCK_SIZE << le32_to_cpu(es->s_log_block_size);
 	if (blocksize < EXT4_MIN_BLOCK_SIZE ||
 	    blocksize > EXT4_MAX_BLOCK_SIZE) {
 		ext4_msg(sb, KERN_ERR,
@@ -3589,6 +3677,18 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 
 no_journal:
 	/*
+	 * Get the # of file system overhead blocks from the
+	 * superblock if present.
+	 */
+	if (es->s_overhead_clusters)
+		sbi->s_overhead = le32_to_cpu(es->s_overhead_clusters);
+	else {
+		ret = ext4_calculate_overhead(sb);
+		if (ret)
+			goto failed_mount_wq;
+	}
+
+	/*
 	 * The maximum number of concurrent works can be high and
 	 * concurrency isn't really necessary.  Limit it to 1.
 	 */
@@ -3622,12 +3722,9 @@ no_journal:
 		ret = -ENOMEM;
 		goto failed_mount4;
 	}
-#ifdef CONFIG_EXT4_LGE_JOURNAL_RECOVERY
-	mountOK=ext4_setup_super(sb, es, sb->s_flags & MS_RDONLY);
-#else
-	ext4_setup_super(sb, es, sb->s_flags & MS_RDONLY);
-#endif
 
+	if (ext4_setup_super(sb, es, sb->s_flags & MS_RDONLY))
+		sb->s_flags |= MS_RDONLY;
 
 	/* determine the minimum size of new large inodes, if present */
 	if (sbi->s_inode_size > EXT4_GOOD_OLD_INODE_SIZE) {
@@ -3705,64 +3802,32 @@ no_journal:
 		mod_timer(&sbi->s_err_report, jiffies + 300*HZ); /* 5 minutes */
 
 	kfree(orig_data);
-
-#ifdef CONFIG_EXT4_LGE_JOURNAL_RECOVERY
-/*
- *2013-07-25, G2-FS@lge.com
- *if 'sbi->s_mount_state & EXT4_ERROR_FS ' mountOK gets EJOURNAL
- *in this case, we need to run e2fsck with j & fy options
- *To do this, ext4_fill_super() should return its failure value.
- *Frst value '3' shows the phone is in the middle of factory reset or the first bootup.
- *Let's return EJOURNAL when mountOK gets EJOURNAL and frst is not 3.
-*/
-
-if ( (mountOK == EJOURNAL) && (get_lge_frst_status( ) != 3 ) )
-	return -EJOURNAL;
-else
 	return 0;
-#else
-	return 0;
-#endif
-
 
 cantfind_ext4:
 	if (!silent)
 		ext4_msg(sb, KERN_ERR, "VFS: Can't find ext4 filesystem");
-#ifdef CONFIG_MACH_LGE
-/*
-2013-06-14, G2-FS@lge.com
-add return code if ext4 superblock is damaged
-*/
-	ret=-ESUPER;
-#endif
 	goto failed_mount;
 
 failed_mount7:
-	printk(KERN_ERR "EXT4-fs: failed_mount7\n");
 	ext4_unregister_li_request(sb);
 failed_mount6:
-	printk(KERN_ERR "EXT4-fs: failed_mount6\n");
 	ext4_mb_release(sb);
 failed_mount5:
-	printk(KERN_ERR "EXT4-fs: failed_mount5\n");
 	ext4_ext_release(sb);
 	ext4_release_system_zone(sb);
 failed_mount4a:
-	printk(KERN_ERR "EXT4-fs: failed_mount4a\n");
 	dput(sb->s_root);
 	sb->s_root = NULL;
 failed_mount4:
-	printk(KERN_ERR "EXT4-fs: failed_mount4\n");
 	ext4_msg(sb, KERN_ERR, "mount failed");
 	destroy_workqueue(EXT4_SB(sb)->dio_unwritten_wq);
 failed_mount_wq:
-	printk(KERN_ERR "EXT4-fs: failed_mount_wq\n");
 	if (sbi->s_journal) {
 		jbd2_journal_destroy(sbi->s_journal);
 		sbi->s_journal = NULL;
 	}
 failed_mount3:
-	printk(KERN_ERR "EXT4-fs: failed_mount3\n");
 	del_timer(&sbi->s_err_report);
 	if (sbi->s_flex_groups)
 		ext4_kvfree(sbi->s_flex_groups);
@@ -3773,15 +3838,10 @@ failed_mount3:
 	if (sbi->s_mmp_tsk)
 		kthread_stop(sbi->s_mmp_tsk);
 failed_mount2:
-	printk(KERN_ERR "EXT4-fs: failed_mount2\n");
-#ifdef CONFIG_MACH_LGE
-ret=-ESUPER;
-#endif
 	for (i = 0; i < db_count; i++)
 		brelse(sbi->s_group_desc[i]);
 	ext4_kvfree(sbi->s_group_desc);
 failed_mount:
-	printk(KERN_ERR "EXT4-fs: failed_mount\n");
 	if (sbi->s_proc) {
 		remove_proc_entry("options", sbi->s_proc);
 		remove_proc_entry(sb->s_id, ext4_proc_root);
@@ -4311,16 +4371,6 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
 #endif
 	char *orig_data = kstrdup(data, GFP_KERNEL);
 
-#ifdef CONFIG_MACH_LGE
-	/* LGE_UPDATE, 2013/05/07, G2-FS@lge.com
-	 * For more information
-	 */
-	if(*flags & MS_RDONLY)
-		ext4_msg(sb, KERN_INFO, "re-mount start. with ro");
-	else
-		ext4_msg(sb, KERN_INFO, "re-mount start. with rw");
-#endif
-
 	/* Store the original options */
 	lock_super(sb);
 	old_sb_flags = sb->s_flags;
@@ -4345,6 +4395,21 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
 	if (!parse_options(data, sb, NULL, &journal_ioprio, 1)) {
 		err = -EINVAL;
 		goto restore_opts;
+	}
+
+	if (test_opt(sb, DATA_FLAGS) == EXT4_MOUNT_JOURNAL_DATA) {
+		if (test_opt2(sb, EXPLICIT_DELALLOC)) {
+			ext4_msg(sb, KERN_ERR, "can't mount with "
+				 "both data=journal and delalloc");
+			err = -EINVAL;
+			goto restore_opts;
+		}
+		if (test_opt(sb, DIOREAD_NOLOCK)) {
+			ext4_msg(sb, KERN_ERR, "can't mount with "
+				 "both data=journal and dioread_nolock");
+			err = -EINVAL;
+			goto restore_opts;
+		}
 	}
 
 	if (sbi->s_mount_flags & EXT4_MF_FS_ABORTED)
@@ -4461,7 +4526,7 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
 	}
 
 	ext4_setup_system_zone(sb);
-	if (sbi->s_journal == NULL)
+	if (sbi->s_journal == NULL && !(old_sb_flags & MS_RDONLY))
 		ext4_commit_super(sb, 1);
 
 #ifdef CONFIG_QUOTA
@@ -4475,11 +4540,7 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
 	if (enable_quota)
 		dquot_resume(sb, -1);
 
-#ifdef CONFIG_MACH_LGE
-	ext4_msg(sb, KERN_INFO, "re-mounted. end. Opts: %s", orig_data);
-#else
 	ext4_msg(sb, KERN_INFO, "re-mounted. Opts: %s", orig_data);
-#endif
 	kfree(orig_data);
 	return 0;
 
@@ -4506,67 +4567,21 @@ restore_opts:
 	return err;
 }
 
-/*
- * Note: calculating the overhead so we can be compatible with
- * historical BSD practice is quite difficult in the face of
- * clusters/bigalloc.  This is because multiple metadata blocks from
- * different block group can end up in the same allocation cluster.
- * Calculating the exact overhead in the face of clustered allocation
- * requires either O(all block bitmaps) in memory or O(number of block
- * groups**2) in time.  We will still calculate the superblock for
- * older file systems --- and if we come across with a bigalloc file
- * system with zero in s_overhead_clusters the estimate will be close to
- * correct especially for very large cluster sizes --- but for newer
- * file systems, it's better to calculate this figure once at mkfs
- * time, and store it in the superblock.  If the superblock value is
- * present (even for non-bigalloc file systems), we will use it.
- */
 static int ext4_statfs(struct dentry *dentry, struct kstatfs *buf)
 {
 	struct super_block *sb = dentry->d_sb;
 	struct ext4_sb_info *sbi = EXT4_SB(sb);
 	struct ext4_super_block *es = sbi->s_es;
-	struct ext4_group_desc *gdp;
+	ext4_fsblk_t overhead = 0;
 	u64 fsid;
 	s64 bfree;
 
-	if (test_opt(sb, MINIX_DF)) {
-		sbi->s_overhead_last = 0;
-	} else if (es->s_overhead_clusters) {
-		sbi->s_overhead_last = le32_to_cpu(es->s_overhead_clusters);
-	} else if (sbi->s_blocks_last != ext4_blocks_count(es)) {
-		ext4_group_t i, ngroups = ext4_get_groups_count(sb);
-		ext4_fsblk_t overhead = 0;
-
-		/*
-		 * Compute the overhead (FS structures).  This is constant
-		 * for a given filesystem unless the number of block groups
-		 * changes so we cache the previous value until it does.
-		 */
-
-		/*
-		 * All of the blocks before first_data_block are
-		 * overhead
-		 */
-		overhead = EXT4_B2C(sbi, le32_to_cpu(es->s_first_data_block));
-
-		/*
-		 * Add the overhead found in each block group
-		 */
-		for (i = 0; i < ngroups; i++) {
-			gdp = ext4_get_group_desc(sb, i, NULL);
-			overhead += ext4_num_overhead_clusters(sb, i, gdp);
-			cond_resched();
-		}
-		sbi->s_overhead_last = overhead;
-		smp_wmb();
-		sbi->s_blocks_last = ext4_blocks_count(es);
-	}
+	if (!test_opt(sb, MINIX_DF))
+		overhead = sbi->s_overhead;
 
 	buf->f_type = EXT4_SUPER_MAGIC;
 	buf->f_bsize = sb->s_blocksize;
-	buf->f_blocks = (ext4_blocks_count(es) -
-			 EXT4_C2B(sbi, sbi->s_overhead_last));
+	buf->f_blocks = ext4_blocks_count(es) - EXT4_C2B(sbi, sbi->s_overhead);
 	bfree = percpu_counter_sum_positive(&sbi->s_freeclusters_counter) -
 		percpu_counter_sum_positive(&sbi->s_dirtyclusters_counter);
 	/* prevent underflow in case that few free space is available */
