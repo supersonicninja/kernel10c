@@ -27,8 +27,8 @@
 #include <linux/msm_thermal.h>
 #include <mach/cpufreq.h>
 
-#define DEFAULT_POLLING_MS	250
-/* last 3 minutes based on 200ms polling cycle */
+#define DEFAULT_POLLING_MS	500
+/* last 3 minutes based on 250ms polling cycle */
 #define MAX_HISTORY_SZ		((3*60*1000) / DEFAULT_POLLING_MS)
 
 struct msm_thermal_stat_data {
@@ -39,16 +39,16 @@ struct msm_thermal_stat_data {
 };
 static struct msm_thermal_stat_data msm_thermal_stats;
 
-static int enabled = 0;
+static int enabled;
 static struct msm_thermal_data msm_thermal_info = {
 	.sensor_id = 0,
-	.poll_ms = 250,
+	.poll_ms = DEFAULT_POLLING_MS,
 	.limit_temp_degC = 75,
-	.temp_hysteresis_degC = 10,
+	.temp_hysteresis_degC = 5,
 	.freq_step = 2,
 	.freq_control_mask = 0xf,
 	.core_limit_temp_degC = 80,
-	.core_temp_hysteresis_degC = 10,
+	.core_temp_hysteresis_degC = 5,
 	.core_control_mask = 0xe,
 };
 static uint32_t limited_max_freq_thermal = MSM_CPUFREQ_NO_LIMIT;
@@ -585,6 +585,7 @@ int __init msm_thermal_init(struct msm_thermal_data *pdata)
 {
 	int ret = 0;
 
+	enabled = 1;
 	if (num_possible_cpus() > 1)
 		core_control_enabled = 1;
 	intellithermal_wq = alloc_workqueue("intellithermal",
@@ -613,3 +614,4 @@ MODULE_AUTHOR("Praveen Chidambaram <pchidamb@codeaurora.org>");
 MODULE_AUTHOR("Paul Reioux <reioux@gmail.com>");
 MODULE_DESCRIPTION("intelligent thermal driver for Qualcomm based SOCs");
 MODULE_DESCRIPTION("originally from Qualcomm's open source repo");
+
