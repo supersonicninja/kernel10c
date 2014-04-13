@@ -191,6 +191,20 @@ static const struct dmi_system_id __initconst i8042_dmi_noloop_table[] = {
 		},
 	},
 	{
+		/* Gigabyte T1005 - defines wrong chassis type ("Other") */
+		.matches = {
+			DMI_MATCH(DMI_SYS_VENDOR, "GIGABYTE"),
+			DMI_MATCH(DMI_PRODUCT_NAME, "T1005"),
+		},
+	},
+	{
+		/* Gigabyte T1005M/P - defines wrong chassis type ("Other") */
+		.matches = {
+			DMI_MATCH(DMI_SYS_VENDOR, "GIGABYTE"),
+			DMI_MATCH(DMI_PRODUCT_NAME, "T1005M/P"),
+		},
+	},
+	{
 		.matches = {
 			DMI_MATCH(DMI_SYS_VENDOR, "Hewlett-Packard"),
 			DMI_MATCH(DMI_PRODUCT_NAME, "HP Pavilion dv9700"),
@@ -331,6 +345,12 @@ static const struct dmi_system_id __initconst i8042_dmi_nomux_table[] = {
 		.matches = {
 			DMI_MATCH(DMI_SYS_VENDOR, "TOSHIBA"),
 			DMI_MATCH(DMI_PRODUCT_NAME, "EQUIUM A110"),
+		},
+	},
+	{
+		.matches = {
+			DMI_MATCH(DMI_SYS_VENDOR, "TOSHIBA"),
+			DMI_MATCH(DMI_PRODUCT_NAME, "SATELLITE C850D"),
 		},
 	},
 	{
@@ -772,6 +792,7 @@ static struct pnp_driver i8042_pnp_kbd_driver = {
 	.id_table       = pnp_kbd_devids,
 	.probe          = i8042_pnp_kbd_probe,
 };
+MODULE_DEVICE_TABLE(pnp, pnp_kbd_devids);
 
 static struct pnp_device_id pnp_aux_devids[] = {
 	{ .id = "AUI0200", .driver_data = 0 },
@@ -794,6 +815,7 @@ static struct pnp_driver i8042_pnp_aux_driver = {
 	.id_table       = pnp_aux_devids,
 	.probe          = i8042_pnp_aux_probe,
 };
+MODULE_DEVICE_TABLE(pnp, pnp_aux_devids);
 
 static void i8042_pnp_exit(void)
 {
