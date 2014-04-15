@@ -1342,6 +1342,8 @@ static int fuse_writepage_locked(struct page *page)
 
 	end_page_writeback(page);
 
+	end_page_writeback(page);
+
 	return 0;
 
 err_free:

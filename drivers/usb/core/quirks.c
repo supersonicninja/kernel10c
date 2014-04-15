@@ -15,17 +15,22 @@
 #include <linux/usb/quirks.h>
 #include "usb.h"
 
-/* List of quirky USB devices.  Please keep this list ordered by:
+/* Lists of quirky USB devices, split in device quirks and interface quirks.
+ * Device quirks are applied at the very beginning of the enumeration process,
+ * right after reading the device descriptor. They can thus only match on device
+ * information.
+ *
+ * Interface quirks are applied after reading all the configuration descriptors.
+ * They can match on both device and interface information.
+ *
+ * Note that the DELAY_INIT and HONOR_BNUMINTERFACES quirks do not make sense as
+ * interface quirks, as they only influence the enumeration process which is run
+ * before processing the interface quirks.
+ *
+ * Please keep the lists ordered by:
  * 	1) Vendor ID
  * 	2) Product ID
  * 	3) Class ID
- *
- * as we want specific devices to be overridden first, and only after that, any
- * class specific quirks.
- *
- * Right now the logic aborts if it finds a valid device in the table, we might
- * want to change that in the future if it turns out that a whole class of
- * devices is broken...
  */
 static const struct usb_device_id usb_quirk_list[] = {
 	/* CBM - Flash disk */
@@ -38,53 +43,26 @@ static const struct usb_device_id usb_quirk_list[] = {
 	/* Creative SB Audigy 2 NX */
 	{ USB_DEVICE(0x041e, 0x3020), .driver_info = USB_QUIRK_RESET_RESUME },
 
-	/* Logitech Webcam C200 */
-	{ USB_DEVICE(0x046d, 0x0802), .driver_info = USB_QUIRK_RESET_RESUME },
+	/* Microsoft LifeCam-VX700 v2.0 */
+	{ USB_DEVICE(0x045e, 0x0770), .driver_info = USB_QUIRK_RESET_RESUME },
 
-	/* Logitech Webcam C250 */
-	{ USB_DEVICE(0x046d, 0x0804), .driver_info = USB_QUIRK_RESET_RESUME },
+	/* Logitech Quickcam Fusion */
+	{ USB_DEVICE(0x046d, 0x08c1), .driver_info = USB_QUIRK_RESET_RESUME },
 
-	/* Logitech Webcam C300 */
-	{ USB_DEVICE(0x046d, 0x0805), .driver_info = USB_QUIRK_RESET_RESUME },
+	/* Logitech Quickcam Orbit MP */
+	{ USB_DEVICE(0x046d, 0x08c2), .driver_info = USB_QUIRK_RESET_RESUME },
 
-	/* Logitech Webcam B/C500 */
-	{ USB_DEVICE(0x046d, 0x0807), .driver_info = USB_QUIRK_RESET_RESUME },
+	/* Logitech Quickcam Pro for Notebook */
+	{ USB_DEVICE(0x046d, 0x08c3), .driver_info = USB_QUIRK_RESET_RESUME },
 
-	/* Logitech Webcam C600 */
-	{ USB_DEVICE(0x046d, 0x0808), .driver_info = USB_QUIRK_RESET_RESUME },
+	/* Logitech Quickcam Pro 5000 */
+	{ USB_DEVICE(0x046d, 0x08c5), .driver_info = USB_QUIRK_RESET_RESUME },
 
-	/* Logitech Webcam Pro 9000 */
-	{ USB_DEVICE(0x046d, 0x0809), .driver_info = USB_QUIRK_RESET_RESUME },
+	/* Logitech Quickcam OEM Dell Notebook */
+	{ USB_DEVICE(0x046d, 0x08c6), .driver_info = USB_QUIRK_RESET_RESUME },
 
-	/* Logitech Webcam C905 */
-	{ USB_DEVICE(0x046d, 0x080a), .driver_info = USB_QUIRK_RESET_RESUME },
-
-	/* Logitech Webcam C210 */
-	{ USB_DEVICE(0x046d, 0x0819), .driver_info = USB_QUIRK_RESET_RESUME },
-
-	/* Logitech Webcam C260 */
-	{ USB_DEVICE(0x046d, 0x081a), .driver_info = USB_QUIRK_RESET_RESUME },
-
-	/* Logitech Webcam C310 */
-	{ USB_DEVICE(0x046d, 0x081b), .driver_info = USB_QUIRK_RESET_RESUME },
-
-	/* Logitech Webcam C910 */
-	{ USB_DEVICE(0x046d, 0x0821), .driver_info = USB_QUIRK_RESET_RESUME },
-
-	/* Logitech Webcam C160 */
-	{ USB_DEVICE(0x046d, 0x0824), .driver_info = USB_QUIRK_RESET_RESUME },
-
-	/* Logitech Webcam C270 */
-	{ USB_DEVICE(0x046d, 0x0825), .driver_info = USB_QUIRK_RESET_RESUME },
-
-	/* Logitech Quickcam Pro 9000 */
-	{ USB_DEVICE(0x046d, 0x0990), .driver_info = USB_QUIRK_RESET_RESUME },
-
-	/* Logitech Quickcam E3500 */
-	{ USB_DEVICE(0x046d, 0x09a4), .driver_info = USB_QUIRK_RESET_RESUME },
-
-	/* Logitech Quickcam Vision Pro */
-	{ USB_DEVICE(0x046d, 0x09a6), .driver_info = USB_QUIRK_RESET_RESUME },
+	/* Logitech Quickcam OEM Cisco VT Camera II */
+	{ USB_DEVICE(0x046d, 0x08c7), .driver_info = USB_QUIRK_RESET_RESUME },
 
 	/* Logitech Harmony 700-series */
 	{ USB_DEVICE(0x046d, 0xc122), .driver_info = USB_QUIRK_DELAY_INIT },
@@ -95,6 +73,16 @@ static const struct usb_device_id usb_quirk_list[] = {
 	/* Artisman Watchdog Dongle */
 	{ USB_DEVICE(0x04b4, 0x0526), .driver_info =
 			USB_QUIRK_CONFIG_INTF_STRINGS },
+
+	/* Microchip Joss Optical infrared touchboard device */
+	{ USB_DEVICE(0x04d8, 0x000c), .driver_info =
+			USB_QUIRK_CONFIG_INTF_STRINGS },
+
+	/* CarrolTouch 4000U */
+	{ USB_DEVICE(0x04e7, 0x0009), .driver_info = USB_QUIRK_RESET_RESUME },
+
+	/* CarrolTouch 4500U */
+	{ USB_DEVICE(0x04e7, 0x0030), .driver_info = USB_QUIRK_RESET_RESUME },
 
 	/* Microchip Joss Optical infrared touchboard device */
 	{ USB_DEVICE(0x04d8, 0x000c), .driver_info =
@@ -122,6 +110,12 @@ static const struct usb_device_id usb_quirk_list[] = {
 	/* MicroTouch Systems touchscreen */
 	{ USB_DEVICE(0x0596, 0x051e), .driver_info = USB_QUIRK_RESET_RESUME },
 
+	/* Alcor Micro Corp. Hub */
+	{ USB_DEVICE(0x058f, 0x9254), .driver_info = USB_QUIRK_RESET_RESUME },
+
+	/* MicroTouch Systems touchscreen */
+	{ USB_DEVICE(0x0596, 0x051e), .driver_info = USB_QUIRK_RESET_RESUME },
+
 	/* appletouch */
 	{ USB_DEVICE(0x05ac, 0x021a), .driver_info = USB_QUIRK_RESET_RESUME },
 
@@ -142,6 +136,9 @@ static const struct usb_device_id usb_quirk_list[] = {
 	/* Midiman M-Audio Keystation 88es */
 	{ USB_DEVICE(0x0763, 0x0192), .driver_info = USB_QUIRK_RESET_RESUME },
 
+	/* Midiman M-Audio Keystation 88es */
+	{ USB_DEVICE(0x0763, 0x0192), .driver_info = USB_QUIRK_RESET_RESUME },
+
 	/* M-Systems Flash Disk Pioneers */
 	{ USB_DEVICE(0x08ec, 0x1000), .driver_info = USB_QUIRK_RESET_RESUME },
 
@@ -154,6 +151,9 @@ static const struct usb_device_id usb_quirk_list[] = {
 
 	/* Broadcom BCM92035DGROM BT dongle */
 	{ USB_DEVICE(0x0a5c, 0x2021), .driver_info = USB_QUIRK_RESET_RESUME },
+
+	/* MAYA44USB sound device */
+	{ USB_DEVICE(0x0a92, 0x0091), .driver_info = USB_QUIRK_RESET_RESUME },
 
 	/* MAYA44USB sound device */
 	{ USB_DEVICE(0x0a92, 0x0091), .driver_info = USB_QUIRK_RESET_RESUME },

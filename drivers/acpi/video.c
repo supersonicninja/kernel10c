@@ -401,6 +401,12 @@ static int video_ignore_initial_backlight(const struct dmi_system_id *d)
 	return 0;
 }
 
+static int video_ignore_initial_backlight(const struct dmi_system_id *d)
+{
+	use_bios_initial_backlight = 0;
+	return 0;
+}
+
 static struct dmi_system_id video_dmi_table[] __initdata = {
 	/*
 	 * Broken _BQC workaround http://bugzilla.kernel.org/show_bug.cgi?id=13121
@@ -443,6 +449,30 @@ static struct dmi_system_id video_dmi_table[] __initdata = {
 	 .matches = {
 		DMI_MATCH(DMI_BOARD_VENDOR, "Acer"),
 		DMI_MATCH(DMI_PRODUCT_NAME, "Aspire 7720"),
+		},
+	},
+	{
+	 .callback = video_ignore_initial_backlight,
+	 .ident = "HP Folio 13-2000",
+	 .matches = {
+		DMI_MATCH(DMI_BOARD_VENDOR, "Hewlett-Packard"),
+		DMI_MATCH(DMI_PRODUCT_NAME, "HP Folio 13 - 2000 Notebook PC"),
+		},
+	},
+	{
+	 .callback = video_ignore_initial_backlight,
+	 .ident = "HP Pavilion g6 Notebook PC",
+	 .matches = {
+		 DMI_MATCH(DMI_BOARD_VENDOR, "Hewlett-Packard"),
+		 DMI_MATCH(DMI_PRODUCT_NAME, "HP Pavilion g6 Notebook PC"),
+		},
+	},
+	{
+	 .callback = video_ignore_initial_backlight,
+	 .ident = "HP Pavilion m4",
+	 .matches = {
+		DMI_MATCH(DMI_BOARD_VENDOR, "Hewlett-Packard"),
+		DMI_MATCH(DMI_PRODUCT_NAME, "HP Pavilion m4 Notebook PC"),
 		},
 	},
 	{
@@ -1798,6 +1828,8 @@ static int acpi_video_bus_remove(struct acpi_device *device, int type)
 {
 	struct acpi_video_bus *video = NULL;
 
+	if (!video->cap._DOS)
+		return 0;
 
 	if (!device || !acpi_driver_data(device))
 		return -EINVAL;
