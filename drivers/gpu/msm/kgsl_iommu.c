@@ -1918,14 +1918,14 @@ static void kgsl_iommu_default_setstate(struct kgsl_mmu *mmu,
 
 	if (ret) {
 		KGSL_DRV_ERR(mmu->device, "Failed to enable iommu clocks\n");
-		return ret;
+		return;
 	}
 
 	/* For v0 SMMU GPU needs to be idle for tlb invalidate as well */
 	if (msm_soc_version_supports_iommu_v0()) {
 		ret = kgsl_idle(mmu->device);
 		if (ret)
-			return ret;
+			return;
 	}
 
 	/* Acquire GPU-CPU sync Lock here */
@@ -2004,7 +2004,7 @@ unlock:
 
 	/* Disable smmu clock */
 	kgsl_iommu_disable_clk_on_ts(mmu, 0, false);
-	return ret;
+	return;
 }
 
 /*
