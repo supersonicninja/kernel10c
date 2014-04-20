@@ -288,3 +288,4 @@ static int __init cpufreq_gov_msm_init(void)
 	return platform_driver_register(&msm_gov_driver);
 }
 late_initcall(cpufreq_gov_msm_init);
+
