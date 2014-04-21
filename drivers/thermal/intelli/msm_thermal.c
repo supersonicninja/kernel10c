@@ -202,7 +202,7 @@ static void __ref do_freq_control(long temp)
 		msm_thermal_info.limit_temp_degC = 75;
 
 	if (debug_mode == 1)
-		printk(KERN_ERR "pre-check do_freq_control temp[%u], \
+		printk(KERN_ERR "pre-check do_freq_control temp[%ld], \
 				limit_idx[%u], limit_idx_low[%u], \
 				limited_idx_high[%u]\n",
 				temp, limit_idx, limit_idx_low,
@@ -230,7 +230,7 @@ static void __ref do_freq_control(long temp)
 	}
 
 	if (debug_mode == 1)
-		printk(KERN_ERR "do_freq_control temp[%u], \
+		printk(KERN_ERR "do_freq_control temp[%ld], \
 				limit_idx[%u], max_freq[%u], \
 				limited_max_freq_thermal[%u]\n",
 				temp, limit_idx, max_freq,
