@@ -453,14 +453,6 @@ static void nbd_clear_que(struct nbd_device *nbd)
 		req->errors++;
 		nbd_end_request(req);
 	}
-
-	while (!list_empty(&nbd->waiting_queue)) {
-		req = list_entry(nbd->waiting_queue.next, struct request,
-				 queuelist);
-		list_del_init(&req->queuelist);
-		req->errors++;
-		nbd_end_request(req);
-	}
 }
 
 
@@ -598,11 +590,8 @@ static int __nbd_ioctl(struct block_device *bdev, struct nbd_device *nbd,
 		nbd_cmd(&sreq) = NBD_CMD_DISC;
 		if (!nbd->sock)
 			return -EINVAL;
-
-		nbd->disconnect = 1;
-
 		nbd_send_req(nbd, &sreq);
-		return 0;
+                return 0;
 	}
  
 	case NBD_CLEAR_SOCK: {
@@ -631,7 +620,6 @@ static int __nbd_ioctl(struct block_device *bdev, struct nbd_device *nbd,
 				nbd->sock = SOCKET_I(inode);
 				if (max_part > 0)
 					bdev->bd_invalidated = 1;
-				nbd->disconnect = 0; /* we're connected now */
 				return 0;
 			} else {
 				fput(file);
@@ -703,8 +691,6 @@ static int __nbd_ioctl(struct block_device *bdev, struct nbd_device *nbd,
 		set_capacity(nbd->disk, 0);
 		if (max_part > 0)
 			ioctl_by_bdev(bdev, BLKRRPART, 0);
-		if (nbd->disconnect) /* user requested, ignore socket errors */
-			return 0;
 		return nbd->harderror;
 	}
 

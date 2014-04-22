@@ -50,7 +50,6 @@
 #define TI_XDS100V2_PID		0xa6d0
 
 #define FTDI_NXTCAM_PID		0xABB8 /* NXTCam for Mindstorms NXT */
-#define FTDI_EV3CON_PID		0xABB9 /* Mindstorms EV3 Console Adapter */
 
 /* US Interface Navigator (http://www.usinterface.com/) */
 #define FTDI_USINT_CAT_PID	0xb810	/* Navigator CAT and 2nd PTT lines */
@@ -136,11 +135,6 @@
 
 /* Vardaan Enterprises Serial Interface VEUSB422R3 */
 #define FTDI_VARDAAN_PID	0xF070
-
-/**
- * Zolix (www.zolix.com.cb) product ids
- */
-#define FTDI_OMNI1509			0xD491	/* Omni1509 embedded USB-serial */
 
 /*
  * Xsens Technologies BV products (http://www.xsens.com).
@@ -369,12 +363,6 @@
 /* Sprog II (Andrew Crosland's SprogII DCC interface) */
 #define FTDI_SPROG_II		0xF0C8
 
-/*
- * Two of the Tagsys RFID Readers
- */
-#define FTDI_TAGSYS_LP101_PID	0xF0E9	/* Tagsys L-P101 RFID*/
-#define FTDI_TAGSYS_P200X_PID	0xF0EE	/* Tagsys Medio P200x RFID*/
-
 /* an infrared receiver for user access control with IR tags */
 #define FTDI_PIEGROUP_PID	0xF208	/* Product Id */
 
@@ -543,11 +531,6 @@
  */
 #define FTDI_TIAO_UMPA_PID	0x8a98	/* TIAO/DIYGADGET USB Multi-Protocol Adapter */
 
-/*
- * TIAO product ids (FTDI_VID)
- * http://www.tiaowiki.com/w/Main_Page
- */
-#define FTDI_TIAO_UMPA_PID	0x8a98	/* TIAO/DIYGADGET USB Multi-Protocol Adapter */
 
 /********************************/
 /** third-party VID/PID combos **/
@@ -600,13 +583,6 @@
  */
 #define CONTEC_VID		0x06CE	/* Vendor ID */
 #define CONTEC_COM1USBH_PID	0x8311	/* COM-1(USB)H */
-
-/*
- * Mitsubishi Electric Corp. (http://www.meau.com)
- * Submitted by Konstantin Holoborodko
- */
-#define MITSUBISHI_VID		0x06D3
-#define MITSUBISHI_FXUSB_PID	0x0284 /* USB/RS422 converters: FX-USB-AW/-BD */
 
 /*
  * Mitsubishi Electric Corp. (http://www.meau.com)
@@ -790,14 +766,6 @@
  */
 #define TTI_VID			0x103E	/* Vendor Id */
 #define TTI_QL355P_PID		0x03E8	/* TTi QL355P power supply */
-
-/*
- * Newport Cooperation (www.newport.com)
- */
-#define NEWPORT_VID			0x104D
-#define NEWPORT_AGILIS_PID		0x3000
-#define NEWPORT_CONEX_CC_PID		0x3002
-#define NEWPORT_CONEX_AGP_PID		0x3006
 
 /*
  * Newport Cooperation (www.newport.com)

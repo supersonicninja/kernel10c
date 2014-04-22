@@ -46,25 +46,11 @@
 #include <asm/xen/hypercall.h>
 #include <asm/xen/page.h>
 
-/*
- * This is the maximum slots a skb can have. If a guest sends a skb
- * which exceeds this limit it is considered malicious.
- */
-#define MAX_SKB_SLOTS_DEFAULT 20
-static unsigned int max_skb_slots = MAX_SKB_SLOTS_DEFAULT;
-module_param(max_skb_slots, uint, 0444);
-
-typedef unsigned int pending_ring_idx_t;
-#define INVALID_PENDING_RING_IDX (~0U)
-
 struct pending_tx_info {
-	struct xen_netif_tx_request req; /* coalesced tx request */
+	struct xen_netif_tx_request req;
 	struct xenvif *vif;
-	pending_ring_idx_t head; /* head != INVALID_PENDING_RING_IDX
-				  * if it is head of one or more tx
-				  * reqs
-				  */
 };
+typedef unsigned int pending_ring_idx_t;
 
 struct netbk_rx_meta {
 	int id;
@@ -115,11 +101,7 @@ struct xen_netbk {
 	atomic_t netfront_count;
 
 	struct pending_tx_info pending_tx_info[MAX_PENDING_REQS];
-	/* Coalescing tx requests before copying makes number of grant
-	 * copy ops greater or equal to number of slots required. In
-	 * worst case a tx request consumes 2 gnttab_copy.
-	 */
-	struct gnttab_copy tx_copy_ops[2*MAX_PENDING_REQS];
+	struct gnttab_copy tx_copy_ops[MAX_PENDING_REQS];
 
 	u16 pending_ring[MAX_PENDING_REQS];
 
@@ -134,16 +116,6 @@ struct xen_netbk {
 
 static struct xen_netbk *xen_netbk;
 static int xen_netbk_group_nr;
-
-/*
- * If head != INVALID_PENDING_RING_IDX, it means this tx request is head of
- * one or more merged tx requests, otherwise it is the continuation of
- * previous tx request.
- */
-static inline int pending_tx_is_head(struct xen_netbk *netbk, RING_IDX idx)
-{
-	return netbk->pending_tx_info[idx].head != INVALID_PENDING_RING_IDX;
-}
 
 void xen_netbk_add_xenvif(struct xenvif *vif)
 {
@@ -277,7 +249,6 @@ static int max_required_rx_slots(struct xenvif *vif)
 {
 	int max = DIV_ROUND_UP(vif->dev->mtu, PAGE_SIZE);
 
-	/* XXX FIXME: RX path dependent on MAX_SKB_FRAGS */
 	if (vif->can_sg || vif->gso || vif->gso_prefix)
 		max += MAX_SKB_FRAGS + 1; /* extra_info + frags */
 
@@ -656,7 +627,6 @@ static void xen_netbk_rx_action(struct xen_netbk *netbk)
 		__skb_queue_tail(&rxq, skb);
 
 		/* Filled the batch queue? */
-		/* XXX FIXME: RX path dependent on MAX_SKB_FRAGS */
 		if (count + MAX_SKB_FRAGS >= XEN_NETIF_RX_RING_SIZE)
 			break;
 	}
@@ -1263,12 +1233,11 @@ static unsigned xen_netbk_tx_build_gops(struct xen_netbk *netbk)
 	struct sk_buff *skb;
 	int ret;
 
-	while ((nr_pending_reqs(netbk) + XEN_NETIF_NR_SLOTS_MIN
-		< MAX_PENDING_REQS) &&
+	while (((nr_pending_reqs(netbk) + MAX_SKB_FRAGS) < MAX_PENDING_REQS) &&
 		!list_empty(&netbk->net_schedule_list)) {
 		struct xenvif *vif;
 		struct xen_netif_tx_request txreq;
-		struct xen_netif_tx_request txfrags[max_skb_slots];
+		struct xen_netif_tx_request txfrags[MAX_SKB_FRAGS];
 		struct page *page;
 		struct xen_netif_extra_info extras[XEN_NETIF_EXTRA_TYPE_MAX-1];
 		u16 pending_idx;
@@ -1356,7 +1325,7 @@ static unsigned xen_netbk_tx_build_gops(struct xen_netbk *netbk)
 		pending_idx = netbk->pending_ring[index];
 
 		data_len = (txreq.size > PKT_PROT_LEN &&
-			    ret < XEN_NETIF_NR_SLOTS_MIN) ?
+			    ret < MAX_SKB_FRAGS) ?
 			PKT_PROT_LEN : txreq.size;
 
 		skb = alloc_skb(data_len + NET_SKB_PAD + NET_IP_ALIGN,
@@ -1406,7 +1375,6 @@ static unsigned xen_netbk_tx_build_gops(struct xen_netbk *netbk)
 		memcpy(&netbk->pending_tx_info[pending_idx].req,
 		       &txreq, sizeof(txreq));
 		netbk->pending_tx_info[pending_idx].vif = vif;
-		netbk->pending_tx_info[pending_idx].head = index;
 		*((u16 *)skb->data) = pending_idx;
 
 		__skb_put(skb, data_len);
@@ -1611,9 +1579,8 @@ static inline int rx_work_todo(struct xen_netbk *netbk)
 static inline int tx_work_todo(struct xen_netbk *netbk)
 {
 
-	if ((nr_pending_reqs(netbk) + XEN_NETIF_NR_SLOTS_MIN
-	     < MAX_PENDING_REQS) &&
-	     !list_empty(&netbk->net_schedule_list))
+	if (((nr_pending_reqs(netbk) + MAX_SKB_FRAGS) < MAX_PENDING_REQS) &&
+			!list_empty(&netbk->net_schedule_list))
 		return 1;
 
 	return 0;
@@ -1695,13 +1662,6 @@ static int __init netback_init(void)
 
 	if (!xen_domain())
 		return -ENODEV;
-
-	if (max_skb_slots < XEN_NETIF_NR_SLOTS_MIN) {
-		printk(KERN_INFO
-		       "xen-netback: max_skb_slots too small (%d), bump it to XEN_NETIF_NR_SLOTS_MIN (%d)\n",
-		       max_skb_slots, XEN_NETIF_NR_SLOTS_MIN);
-		max_skb_slots = XEN_NETIF_NR_SLOTS_MIN;
-	}
 
 	xen_netbk_group_nr = num_online_cpus();
 	xen_netbk = vzalloc(sizeof(struct xen_netbk) * xen_netbk_group_nr);

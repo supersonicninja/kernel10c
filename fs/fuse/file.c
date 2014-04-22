@@ -913,7 +913,6 @@ static ssize_t fuse_perform_write(struct file *file,
 {
 	struct inode *inode = mapping->host;
 	struct fuse_conn *fc = get_fuse_conn(inode);
-	struct fuse_inode *fi = get_fuse_inode(inode);
 	int err = 0;
 	ssize_t res = 0;
 
@@ -1337,8 +1336,6 @@ static int fuse_writepage_locked(struct page *page)
 	list_add_tail(&req->list, &fi->queued_writes);
 	fuse_flush_writepages(inode);
 	spin_unlock(&fc->lock);
-
-	end_page_writeback(page);
 
 	end_page_writeback(page);
 

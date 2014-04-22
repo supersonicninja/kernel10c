@@ -2689,6 +2689,10 @@ struct kobject *dm_kobject(struct mapped_device *md)
 	return &md->kobj;
 }
 
+/*
+ * struct mapped_device should not be exported outside of dm.c
+ * so use this check to verify that kobj is part of md structure
+ */
 struct mapped_device *dm_get_from_kobject(struct kobject *kobj)
 {
 	struct mapped_device *md;

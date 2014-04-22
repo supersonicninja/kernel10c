@@ -37,7 +37,6 @@
 
 #include <linux/ip.h>
 #include <linux/module.h>
-#include <linux/udp.h>
 
 /*
  *NOTICE!!!: This file will be very big, we should
