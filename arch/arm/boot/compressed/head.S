@@ -10,7 +10,6 @@
  */
 #include <linux/linkage.h>
 
-	.arch	armv7-a
 /*
  * Debugging stuff
  *
@@ -639,7 +638,6 @@ __armv4_mmu_cache_on:
 		mcr	p15, 0, r0, c7, c10, 4	@ drain write buffer
 		mcr	p15, 0, r0, c8, c7, 0	@ flush I,D TLBs
 		mrc	p15, 0, r0, c1, c0, 0	@ read control reg
-		bic	r0, r0, #1 << 28	@ clear SCTLR.TRE
 		orr	r0, r0, #0x5000		@ I-cache enable, RR cache replacement
 		orr	r0, r0, #0x0030
 #ifdef CONFIG_CPU_ENDIAN_BE8

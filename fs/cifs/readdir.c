@@ -721,7 +721,6 @@ static int cifs_filldir(char *find_entry, struct file *file, filldir_t filldir,
 
 int cifs_readdir(struct file *file, void *direntry, filldir_t filldir)
 {
-	__u16 search_flags;
 	int rc = 0;
 	int xid, i;
 	struct cifs_tcon *pTcon;

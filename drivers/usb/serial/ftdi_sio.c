@@ -74,7 +74,9 @@ struct ftdi_private {
 	int flags;		/* some ASYNC_xxxx flags are supported */
 	unsigned long last_dtr_rts;	/* saved modem control outputs */
 	struct async_icount	icount;
+	wait_queue_head_t delta_msr_wait; /* Used for TIOCMIWAIT */
 	char prev_status;        /* Used for TIOCMIWAIT */
+	bool dev_gone;        /* Used to abort TIOCMIWAIT */
 	char transmit_empty;	/* If transmitter is empty or not */
 	struct usb_serial_port *port;
 	__u16 interface;	/* FT2232C, FT2232H or FT4232H port interface
@@ -1740,8 +1742,10 @@ static int ftdi_sio_port_probe(struct usb_serial_port *port)
 	kref_init(&priv->kref);
 	mutex_init(&priv->cfg_lock);
 	memset(&priv->icount, 0x00, sizeof(priv->icount));
+	init_waitqueue_head(&priv->delta_msr_wait);
 
 	priv->flags = ASYNC_LOW_LATENCY;
+	priv->dev_gone = false;
 
 	if (quirk && quirk->port_probe)
 		quirk->port_probe(priv);
@@ -1861,13 +1865,12 @@ static int ftdi_stmclite_probe(struct usb_serial *serial)
 
 	dbg("%s", __func__);
 
-	if (interface == udev->actconfig->interface[0] ||
-	    interface == udev->actconfig->interface[1]) {
-		dev_info(&udev->dev, "Ignoring serial port reserved for JTAG\n");
-		return -ENODEV;
-	}
+	if (interface == udev->actconfig->interface[2])
+		return 0;
 
-	return 0;
+	dev_info(&udev->dev, "Ignoring serial port reserved for JTAG\n");
+
+	return -ENODEV;
 }
 
 /*
@@ -1901,7 +1904,8 @@ static int ftdi_sio_port_remove(struct usb_serial_port *port)
 
 	dbg("%s", __func__);
 
-	wake_up_interruptible(&port->delta_msr_wait);
+	priv->dev_gone = true;
+	wake_up_interruptible_all(&priv->delta_msr_wait);
 
 	remove_sysfs_attrs(port);
 
@@ -2056,7 +2060,7 @@ static int ftdi_process_packet(struct tty_struct *tty,
 		if (diff_status & FTDI_RS0_RLSD)
 			priv->icount.dcd++;
 
-		wake_up_interruptible(&port->delta_msr_wait);
+		wake_up_interruptible_all(&priv->delta_msr_wait);
 		priv->prev_status = status;
 	}
 
@@ -2230,16 +2234,13 @@ no_skip:
 	} else {
 		urb_value |= FTDI_SIO_SET_DATA_PARITY_NONE;
 	}
-	switch (cflag & CSIZE) {
-	case CS7:
-		urb_value |= 7;
-		dev_dbg(&port->dev, "Setting CS7\n");
-		break;
-	default:
-	case CS8:
-		urb_value |= 8;
-		dev_dbg(&port->dev, "Setting CS8\n");
-		break;
+	if (cflag & CSIZE) {
+		switch (cflag & CSIZE) {
+		case CS7: urb_value |= 7; dbg("Setting CS7"); break;
+		case CS8: urb_value |= 8; dbg("Setting CS8"); break;
+		default:
+			dev_err(&port->dev, "CSIZE was set but not CS7-CS8\n");
+		}
 	}
 
 	/* This is needed by the break command since it uses the same command
@@ -2462,15 +2463,11 @@ static int ftdi_ioctl(struct tty_struct *tty,
 	 */
 	case TIOCMIWAIT:
 		cprev = priv->icount;
-		for (;;) {
-			interruptible_sleep_on(&port->delta_msr_wait);
+		while (!priv->dev_gone) {
+			interruptible_sleep_on(&priv->delta_msr_wait);
 			/* see if a signal did it */
 			if (signal_pending(current))
 				return -ERESTARTSYS;
-
-			if (port->serial->disconnected)
-				return -EIO;
-
 			cnow = priv->icount;
 			if (((arg & TIOCM_RNG) && (cnow.rng != cprev.rng)) ||
 			    ((arg & TIOCM_DSR) && (cnow.dsr != cprev.dsr)) ||
@@ -2480,6 +2477,8 @@ static int ftdi_ioctl(struct tty_struct *tty,
 			}
 			cprev = cnow;
 		}
+		return -EIO;
+		break;
 	case TIOCSERGETLSR:
 		return get_lsr_info(port, (struct serial_struct __user *)arg);
 		break;

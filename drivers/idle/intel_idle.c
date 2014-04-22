@@ -233,38 +233,6 @@ static struct cpuidle_state ivb_cstates[MWAIT_MAX_NUM_CSTATES] = {
 		.enter = &intel_idle },
 };
 
-static struct cpuidle_state ivb_cstates[MWAIT_MAX_NUM_CSTATES] = {
-	{ /* MWAIT C0 */ },
-	{ /* MWAIT C1 */
-		.name = "C1-IVB",
-		.desc = "MWAIT 0x00",
-		.flags = CPUIDLE_FLAG_TIME_VALID,
-		.exit_latency = 1,
-		.target_residency = 1,
-		.enter = &intel_idle },
-	{ /* MWAIT C2 */
-		.name = "C3-IVB",
-		.desc = "MWAIT 0x10",
-		.flags = CPUIDLE_FLAG_TIME_VALID | CPUIDLE_FLAG_TLB_FLUSHED,
-		.exit_latency = 59,
-		.target_residency = 156,
-		.enter = &intel_idle },
-	{ /* MWAIT C3 */
-		.name = "C6-IVB",
-		.desc = "MWAIT 0x20",
-		.flags = CPUIDLE_FLAG_TIME_VALID | CPUIDLE_FLAG_TLB_FLUSHED,
-		.exit_latency = 80,
-		.target_residency = 300,
-		.enter = &intel_idle },
-	{ /* MWAIT C4 */
-		.name = "C7-IVB",
-		.desc = "MWAIT 0x30",
-		.flags = CPUIDLE_FLAG_TIME_VALID | CPUIDLE_FLAG_TLB_FLUSHED,
-		.exit_latency = 87,
-		.target_residency = 300,
-		.enter = &intel_idle },
-};
-
 static struct cpuidle_state atom_cstates[MWAIT_MAX_NUM_CSTATES] = {
 	{ /* MWAIT C0 */ },
 	{ /* MWAIT C1 */
@@ -441,10 +409,6 @@ static const struct idle_cpu idle_cpu_lincroft = {
 
 static const struct idle_cpu idle_cpu_snb = {
 	.state_table = snb_cstates,
-};
-
-static const struct idle_cpu idle_cpu_ivb = {
-	.state_table = ivb_cstates,
 };
 
 static const struct idle_cpu idle_cpu_ivb = {
@@ -666,9 +630,8 @@ static int __init intel_idle_init(void)
 	intel_idle_cpuidle_driver_init();
 	retval = cpuidle_register_driver(&intel_idle_driver);
 	if (retval) {
-		struct cpuidle_driver *drv = cpuidle_get_driver();
 		printk(KERN_DEBUG PREFIX "intel_idle yielding to %s",
-			drv ? drv->name : "none");
+			cpuidle_get_driver()->name);
 		return retval;
 	}
 

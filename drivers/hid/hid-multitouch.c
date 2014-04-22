@@ -666,16 +666,6 @@ static void mt_post_parse(struct mt_device *td)
 	}
 }
 
-static void mt_post_parse(struct mt_device *td)
-{
-	struct mt_fields *f = td->fields;
-
-	if (td->touches_by_report > 0) {
-		int field_count_per_touch = f->length / td->touches_by_report;
-		td->last_slot_field = f->usages[field_count_per_touch - 1];
-	}
-}
-
 static int mt_probe(struct hid_device *hdev, const struct hid_device_id *id)
 {
 	int ret, i;
@@ -714,13 +704,6 @@ static int mt_probe(struct hid_device *hdev, const struct hid_device_id *id)
 		goto fail;
 	}
 
-	td->fields = kzalloc(sizeof(struct mt_fields), GFP_KERNEL);
-	if (!td->fields) {
-		dev_err(&hdev->dev, "cannot allocate multitouch fields data\n");
-		ret = -ENOMEM;
-		goto fail;
-	}
-
 	ret = hid_parse(hdev);
 	if (ret != 0)
 		goto fail;
@@ -728,8 +711,6 @@ static int mt_probe(struct hid_device *hdev, const struct hid_device_id *id)
 	ret = hid_hw_start(hdev, HID_CONNECT_DEFAULT);
 	if (ret)
 		goto fail;
-
-	mt_post_parse(td);
 
 	mt_post_parse(td);
 
@@ -968,11 +949,6 @@ static const struct hid_device_id mt_devices[] = {
 	{ .driver_data = MT_CLS_PANASONIC,
 		HID_USB_DEVICE(USB_VENDOR_ID_PANASONIC,
 			USB_DEVICE_ID_PANABOARD_UBT880) },
-
-	/* Novatek Panel */
-	{ .driver_data = MT_CLS_DEFAULT,
-		HID_USB_DEVICE(USB_VENDOR_ID_NOVATEK,
-			USB_DEVICE_ID_NOVATEK_PCT) },
 
 	/* Novatek Panel */
 	{ .driver_data = MT_CLS_DEFAULT,
